@@ -4,9 +4,12 @@ No user-supplied import paths, commands or functions are accepted.
 """
 import asyncio
 import multiprocessing as mp
+import time
+
+OPERATIONS={'football-season','football-context','nba-logs','football-model'}
 
 
-def _run(queue,kind,value):
+def _run(connection,kind,value):
     try:
         if kind=='football-season':
             from sports_skills import football
@@ -17,24 +20,47 @@ def _run(queue,kind,value):
         elif kind=='nba-logs':
             from nba_api.stats.endpoints import leaguegamelog
             result=leaguegamelog.LeagueGameLog(season=value,timeout=10).get_normalized_dict()
+        elif kind=='football-model':
+            from .model import predict
+            result=predict(**value)
         else: raise ValueError('Operación no permitida')
-        queue.put(('ok',result))
+        connection.send(('ok',result))
     except Exception:
-        queue.put(('error',None))
+        connection.send(('error',None))
+    finally:
+        connection.close()
+
+
+async def _receive(connection,process,timeout):
+    deadline=time.monotonic()+timeout
+    while time.monotonic()<deadline:
+        if connection.poll():
+            return await asyncio.to_thread(connection.recv)
+        if not process.is_alive():
+            raise ValueError('El proceso terminó sin respuesta')
+        await asyncio.sleep(.02)
+    raise TimeoutError('Tiempo de operación agotado')
 
 
 async def query(kind,value,timeout=18):
+    if kind not in OPERATIONS:
+        raise ValueError('Operación no permitida')
     context=mp.get_context('spawn')
-    queue=context.Queue()
-    process=context.Process(target=_run,args=(queue,kind,value),daemon=True)
-    process.start()
+    reader,writer=context.Pipe(duplex=False)
+    process=context.Process(target=_run,args=(writer,kind,value),daemon=True)
     try:
-        status,result=await asyncio.wait_for(asyncio.to_thread(queue.get,True,timeout),timeout+1)
+        process.start()
+        writer.close()
+        status,result=await asyncio.wait_for(_receive(reader,process,timeout),timeout)
         if status!='ok':raise ValueError('Proveedor no disponible')
         return result
-    except Exception as e:
-        raise TimeoutError('Proveedor no disponible o tiempo agotado') from e
     finally:
-        if process.is_alive():process.terminate()
-        await asyncio.to_thread(process.join,2)
-        queue.close()
+        if process.pid is not None:
+            if process.is_alive():process.terminate()
+            process.join(1)
+            if process.is_alive():
+                process.kill()
+                process.join(1)
+            process.close()
+        reader.close()
+        writer.close()

@@ -81,5 +81,7 @@ class Event(Strict):
     away: str
     home_id: str
     away_id: str
+    home_abbreviation: str | None = None
+    away_abbreviation: str | None = None
     provider: str
     reference: str

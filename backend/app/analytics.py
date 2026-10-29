@@ -6,17 +6,22 @@ def evaluate(s: Selection, probability: float | None = None):
     supported = s.period == 'match' and (
         (s.sport == 'football' and s.market == '1x2' and s.side in ['home', 'draw', 'away'])
         or (s.sport == 'football' and s.market == 'total' and s.side in ['over', 'under']
-            and s.line is not None and s.line % 1 == .5)
+            and s.line is not None and .5 <= s.line <= 9.5 and s.line % 1 == .5)
         or (s.sport == 'nba' and s.market == 'moneyline' and s.side in ['home', 'away']))
     result = dict(implied=1/s.odds if s.odds else None, reference=None, margin=None,
                   probability=probability if supported else None, ev=None,
-                  status='ok' if supported else 'unsupported')
+                  status='ok' if supported else 'unsupported', warnings=[])
     labels = {'home', 'draw', 'away'} if s.market == '1x2' else {'over', 'under'} if s.market == 'total' else {'home', 'away'}
     if supported and s.complete_market and set(s.complete_market) == labels:
-        if all(math.isfinite(d) and d > 1 for d in s.complete_market.values()):
+        consistent = s.odds is None or math.isclose(s.complete_market.get(s.side,0),s.odds,rel_tol=1e-9)
+        if not consistent:
+            result['warnings'].append('La cuota seleccionada no coincide con el mercado completo; referencia sin margen no disponible.')
+        elif all(math.isfinite(d) and d > 1 for d in s.complete_market.values()):
             qs = {k: 1/v for k, v in s.complete_market.items()}
             result['margin'] = sum(qs.values()) - 1
             result['reference'] = {k: v/sum(qs.values()) for k, v in qs.items()}
+    if supported and probability is None:
+        result['status']='unavailable'
     if supported and probability is not None and s.odds:
         if not 0 <= probability <= 1:
             raise ValueError('Probabilidad inválida')
