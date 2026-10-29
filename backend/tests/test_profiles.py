@@ -77,7 +77,7 @@ def test_vision_routes_to_each_profile_without_changing_keys(monkeypatch):
     calls=[]
     async def create(**kwargs):
         calls.append(kwargs)
-        return NS(output_text='{"selections":[]}',usage=Dump({'input_tokens':5,'output_tokens':2}))
+        return NS(status='completed',output_text='{"selections":[]}',usage=Dump({'input_tokens':5,'output_tokens':2}))
     class Client:
         def __init__(self,**kwargs):self.responses=NS(create=create)
         async def __aenter__(self):return self

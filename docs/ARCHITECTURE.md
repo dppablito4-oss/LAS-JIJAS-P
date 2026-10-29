@@ -12,14 +12,14 @@ El demo usa un reloj de análisis simulado fijo (29/10/2026 12:00 UTC) para que 
 4. Un worker asyncio consume la cola local de hasta 25 trabajos. Guarda estados queued/running/completed/failed/interrupted. Reinicio marca pendientes como interrumpidos. No reintenta gasto automáticamente.
 5. Se vuelve a validar que el ID confirmado está entre los candidatos. Solo eventos futuros se modelan. Calendarios y muestras históricas se cachean por proveedor/temporada/parámetros/corte; originales de la fuente están disponibles en SQLite local.
 6. Python calcula forma, precios y Dixon-Coles cuando hay muestra suficiente. El corte es la hora UTC de inicio del análisis, anterior al evento; no el horario de extracción ni el de cierre. Nunca se usan resultados futuros o cuotas de cierre como entrada.
-7. Los perfiles Sol (Responses) y Economy (DeepSeek thinking) comparten el catálogo permitido. El catálogo de herramientas expone solo siete funciones de lectura/cálculo por índice de selección. Pydantic rechaza argumentos adicionales, ventanas inválidas, herramientas ajenas e índices fuera de rango. DeepSeek recibe solo herramientas pertinentes, respuestas pequeñas y hechos calculados. El ciclo conserva IDs, valida, deduplica y devuelve resultados antes de seguir. Hasta 6 rondas, 12 llamadas por ronda, 3 concurrentes y 1.800 tokens por respuesta.
-8. El informe determinista separa evento, cálculos, evidencia y ausencias. DeepSeek agrega un comentario claramente separado; no sustituye probabilidades, EV ni conclusión. El servicio persiste el informe, sin delegar la escritura a la IA.
+7. El catálogo de herramientas expone solo siete funciones de lectura/cálculo por índice de selección. Pydantic rechaza argumentos adicionales, ventanas inválidas, herramientas ajenas e índices fuera de rango. DeepSeek recibe solo herramientas pertinentes, respuestas pequeñas y hechos calculados. El ciclo conserva IDs, valida, deduplica y devuelve resultados antes de seguir. Hasta 6 rondas, 12 llamadas por ronda y 3 concurrentes. DeepSeek V4 Pro usa thinking configurable y hasta 8.192 tokens de generación por ronda, incluido razonamiento.
+8. El informe determinista separa evento, cálculos, evidencia y ausencias. DeepSeek agrega un comentario claramente separado. En el perfil hybrid, después GPT-6.1 Sol revisa hechos resumidos mediante Responses; su texto también queda separado y no sustituye probabilidades, EV ni conclusión. GPT-6 Luna realiza la extracción. Modelos y razonamiento son configurables en .env. El servicio persiste el informe, sin delegar la escritura a la IA.
 
 ## Módulos
 
 - `schemas.py`: contratos de selección, evento, evidencia, extracción y solicitud.
 - `providers.py`: demo sintético, ESPN específico por liga, sports-skills fútbol y nba_api.
-- `isolated.py`: catálogo cerrado de tres operaciones SDK en procesos terminables. Sin ejecución de comandos ni imports de usuario.
+- `isolated.py`: catálogo cerrado de tres operaciones SDK y el cálculo de fútbol en procesos terminables. Tanto cancelación como timeout terminan y recogen el proceso. Sin ejecución de comandos ni imports de usuario.
 - `analytics.py`: reglas de mercado, forma y dependencias/incompatibilidades.
 - `model.py`: importación diferida de penaltyblog, ajuste ponderado, distribución y evaluación temporal.
 - `tools.py`: catálogo permitido, esquemas estrictos y memoización.
@@ -32,7 +32,7 @@ El demo usa un reloj de análisis simulado fijo (29/10/2026 12:00 UTC) para que 
 
 SQLite conserva solicitudes, informes, timestamps, relación `parent_id`, uso de API y caché. Cada revisión genera un ID nuevo; no se sobreescribe el informe previo al encuentro. No hay actualización automática de resultados finales todavía: `final_result` es null y no se inventa. El historial muestra los mercados/cuotas y permite exportar evidencia.
 
-`api_usage` persiste cada respuesta devuelta por la API, antes del parseo o ronda siguiente; así los fallos posteriores no borran uso conocido. `GET /analyses/{id}` devuelve también `api_usage`, incluso si el informe falla. No se puede registrar una respuesta que el proveedor nunca llegó a devolver; gasto exacto ante cortes de red queda desconocido. Se deshabilitan reintentos automáticos del SDK. El precio configurable/fechado del analista exige PRICE_MODEL coincidente con el modelo activo; no incluye extracción ni factura de cuenta.
+`api_usage` persiste cada respuesta devuelta por la API, antes del parseo o ronda siguiente; así los fallos posteriores no borran uso conocido. `GET /analyses/{id}` devuelve también `api_usage`, incluso si el informe falla. No se puede registrar una respuesta que el proveedor nunca llegó a devolver; gasto exacto ante cortes de red queda desconocido. Se deshabilitan reintentos automáticos del SDK. El precio configurable/fechado del analista no incluye extracción ni factura de cuenta. Si se registra uso de revisión OpenAI, la estimación del informe queda desconocida para evitar mezclar tarifas de proveedores.
 
 No se persisten imágenes ni razonamiento; sí el texto revisado que el usuario pide conservar en el historial. Acceso HTTP sin logs de petición por defecto en scripts. CORS y Origin restringidos a localhost:8000/5173, hosts localhost/127.0.0.1; `testserver` solo permite el cliente de pruebas. No se usa autenticación: es una aplicación local personal, no un servicio multiusuario. No exponer el puerto a internet.
 
@@ -43,3 +43,13 @@ La caché conserva el sello original de descarga y los datos originales; un hit 
 Modelo siempre experimental; evaluación pequeña, sin optimización de rentabilidad. No se ajustan probabilidades con lesiones o xG inventados. No se multiplican selecciones; incompatibilidades 1X2 y totales del mismo evento se detectan. NBA solo descriptivo y cuota implícita. Sin fuentes comprobadas de bajas, se declara ausencia de cobertura.
 
 Los wrappers deportivos pueden cambiar o fallar. Los adaptadores devuelven parcial/unavailable y conservan el fallo; los procesos externos se terminan tras timeout. El límite global de análisis protege la interfaz; una combinación de muchas selecciones y fuentes lentas puede finalizar en failed en vez de producir un informe parcial completo. La concurrencia de workers y una cola distribuida quedan fuera del MVP.
+
+## Correcciones de integridad e IA
+
+Se aceptan históricos de fuente explícita ESPN, se deduplican eventos y el modelo usa IDs estables. La evaluación tiene entrenamiento creciente en bloques cronológicos y abarca el holdout completo, con calibración 1X2 y métricas por línea de total. Se conserva el carácter experimental. El modelo se calcula una vez por evento/corte dentro de un análisis.
+
+El modo real rechaza cuotas futuras y suspende EV por precio antiguo o históricos antiguos según los umbrales de configuración. El formulario invalida mercado completo al cambiar identidad, línea o precio y descarta respuestas de búsquedas anteriores.
+
+El plazo global por defecto es 240 s, ajuste 45 s y etapa IA hasta 90 s. El tiempo de las etapas IA se adapta al restante para conservar el informe determinista cuando no finalizan. Una combinación de muchas selecciones y fuentes lentas aún puede agotar el plazo global.
+
+Se conservan los perfiles Sol (visión y herramientas Responses con continuidad del razonamiento cifrado) y Economy (Luna y DeepSeek). Hybrid añade la revisión final a Economy. El informe y capabilities conservan perfil, proveedor y modelo activos; PRICE_MODEL debe coincidir con el analista para estimar su coste.

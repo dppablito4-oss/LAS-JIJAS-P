@@ -34,7 +34,8 @@ def test_demo_e2e_history_persistence_idempotency(monkeypatch):
         assert a.status_code==202,a.text
         jid=a.json()['id']
         assert client.post('/api/analyses',json=body,headers=headers).json()['id']==jid
-        for _ in range(100):
+        deadline=time.monotonic()+settings.model_timeout_seconds+15
+        while time.monotonic()<deadline:
             job=client.get('/api/analyses/'+jid).json()
             if job['status'] not in ['queued','running']:break
             time.sleep(.1)
