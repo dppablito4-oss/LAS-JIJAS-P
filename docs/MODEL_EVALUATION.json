@@ -1,0 +1,87 @@
+{
+  "retrieved_at": "2026-10-29T18:01:13.679300+00:00",
+  "status": "experimental",
+  "event": {
+    "id": "espn:soccer/eng.1:401879248",
+    "sport": "football",
+    "competition": "Premier League",
+    "season": "2026",
+    "category": "masculino-profesional",
+    "starts_at": "2026-10-31T12:30:00Z",
+    "home": "Chelsea",
+    "away": "Manchester United",
+    "home_id": "363",
+    "away_id": "360",
+    "provider": "ESPN",
+    "reference": "https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard?dates=20261031&limit=100"
+  },
+  "source": "https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/teams/363/schedule?season=2025",
+  "historical_n": 380,
+  "model": {
+    "status": "experimental",
+    "model": "penaltyblog/DixonColes-1.13.1",
+    "xi": 0.0018,
+    "cutoff": "2026-10-29T18:01:13.679300+00:00",
+    "sample_n": 380,
+    "sample_from": "2025-08-16T01:00:00+00:00",
+    "sample_to": "2026-05-24T21:00:00+00:00",
+    "home_draw_away": [
+      0.3438127740358206,
+      0.26298324206377993,
+      0.3932039839003993
+    ],
+    "totals": {
+      "0.5": 0.9458737531825738,
+      "1.5": 0.8525443216519077,
+      "2.5": 0.6329027369565454,
+      "3.5": 0.4112725159030562,
+      "4.5": 0.23052824193980923,
+      "5.5": 0.11260752728197594
+    },
+    "evaluation": {
+      "status": "experimental",
+      "n": 30,
+      "from": "2026-05-09T20:00:00+00:00",
+      "to": "2026-05-24T21:00:00+00:00",
+      "train_n": 304,
+      "train_to": "2026-03-21T21:00:00+00:00",
+      "brier": 0.5841257887830256,
+      "log_loss": 0.9815848915157972,
+      "baseline_brier": 0.6586835580925706,
+      "baseline_log_loss": 1.0888930953260398,
+      "calibration": [
+        {
+          "bin": "0.0–0.2",
+          "n": 3,
+          "mean_p": 0.1378128001568966,
+          "frequency": 0.0
+        },
+        {
+          "bin": "0.2–0.4",
+          "n": 13,
+          "mean_p": 0.31385251797990354,
+          "frequency": 0.38461538461538464
+        },
+        {
+          "bin": "0.4–0.6",
+          "n": 8,
+          "mean_p": 0.4717697737986195,
+          "frequency": 0.25
+        },
+        {
+          "bin": "0.6–0.8",
+          "n": 5,
+          "mean_p": 0.6243615798008052,
+          "frequency": 1.0
+        },
+        {
+          "bin": "0.8–1.0",
+          "n": 1,
+          "mean_p": 0.8621684524910267,
+          "frequency": 1.0
+        }
+      ],
+      "reason": "Muestra inicial pequeña, sin certificación de ventaja. Baseline: frecuencias 1X2 del bloque de entrenamiento."
+    }
+  }
+}

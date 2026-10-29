@@ -1,0 +1,39 @@
+[
+  {
+    "provider": "sports-skills",
+    "retrieved_at": "2026-10-29T17:56:53.024794+00:00",
+    "status": "ok",
+    "upstream_status": true,
+    "n": 380,
+    "underlying_source": "ESPN",
+    "function": "sports_skills.football.get_season_schedule"
+  },
+  {
+    "provider": "nba_api",
+    "retrieved_at": "2026-10-29T17:56:53.024794+00:00",
+    "status": "ok",
+    "n": 2460,
+    "function": "nba_api.stats.endpoints.leaguegamelog"
+  },
+  {
+    "provider": "ESPN Premier League",
+    "retrieved_at": "2026-10-29T17:56:53.024794+00:00",
+    "status": "partial",
+    "n": 10,
+    "reference": "https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard"
+  },
+  {
+    "provider": "ESPN LaLiga",
+    "retrieved_at": "2026-10-29T17:56:53.025794+00:00",
+    "status": "partial",
+    "n": 9,
+    "reference": "https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/scoreboard"
+  },
+  {
+    "provider": "ESPN NBA",
+    "retrieved_at": "2026-10-29T17:56:53.025794+00:00",
+    "status": "partial",
+    "n": 26,
+    "reference": "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
+  }
+]
