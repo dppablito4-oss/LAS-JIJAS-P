@@ -60,6 +60,8 @@ class ToolBox:
                 missing=['pace','offensive_rating','defensive_rating'];status='partial'
                 warnings=['Puntos finales y registros observados; ritmo y eficiencias no verificados en este adaptador. NBA solo descriptivo.']
             if not rows: status='unavailable';warnings+=c.get('warnings',[])
+        warnings+=c.get('warnings',[])
+        if status=='ok' and c.get('history_stale'):status='partial'
         value=Evidence(status=status,event_id=event.id if event else None,as_of=c.get('data_as_of'),
             retrieved_at=c.get('data_retrieved_at',now()),
             source={'provider':c.get('provider','local-calculator'),'reference':c.get('reference')},

@@ -51,6 +51,12 @@ class Extraction(Strict):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ReviewResult(Strict):
+    verdict: Literal['issues_found','no_additional_issues','insufficient_data']
+    observations: list[str] = Field(max_length=30)
+    summary: str = Field(min_length=1,max_length=4000)
+
+
 class AnalysisRequest(Strict):
     selections: list[Selection] = Field(min_length=1, max_length=20)
     reviewed: Literal[True]

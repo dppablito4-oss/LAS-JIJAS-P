@@ -2,6 +2,41 @@
 
 Configuración verificada el **29/10/2026** en documentación oficial. Los IDs se configuran en servidor; nunca se exponen claves en frontend, capacidades o informes. Cambiar `.env` requiere reiniciar. No se ejecutaron llamadas de IA facturables durante la implementación.
 
+## Actualización: perfil hybrid con revisión
+
+El `.env` local está adaptado a `APP_MODE=real`, `AI_PROFILE=hybrid`, conservando exactamente ambos valores de claves anteriores. La suite actual tiene **40 tests aprobados**; la descripción de 30 pruebas de la implementación anterior se conserva más abajo como historial.
+
+```dotenv
+AI_PROFILE=hybrid
+OPENAI_VISION_MODEL=gpt-6-luna
+OPENAI_VISION_EFFORT=low
+OPENAI_REVIEW_MODEL=gpt-6.1-sol
+OPENAI_REVIEW_ENABLED=true
+OPENAI_REVIEW_EFFORT=high
+OPENAI_REVIEW_MODE=standard
+DEEPSEEK_MODEL=deepseek-v4-pro
+DEEPSEEK_THINKING=true
+DEEPSEEK_REASONING_EFFORT=high
+```
+
+Recorrido: Luna extrae, DeepSeek analiza con herramientas y Sol revisa el informe y el comentario. La revisión recibe evidencia y limitaciones; no tiene herramientas ni puede escribir en el motor de probabilidades. Se guarda por separado y aparece como «Revisión adicional» en la web. Un fallo, JSON inválido o timeout se declara sin borrar el informe principal. El uso conocido de la revisión se registra en `api_usage` aun si una validación posterior falla.
+
+`OPENAI_REVIEW_ENABLED` es el interruptor explícito de revisión en cualquier perfil. Para recuperar la configuración ahorradora cambia también `DEEPSEEK_MODEL=deepseek-flash` y `OPENAI_REVIEW_ENABLED=false`; cambiar solo `AI_PROFILE` no sustituye los modelos personalizados ni apaga un interruptor habilitado.
+
+`OPENAI_REVIEW_MODE=pro` es un **preset local de esta aplicación**: usa `reasoning.effort=max` con el mismo `gpt-6.1-sol`, sin ampliar automáticamente el límite de tokens ni el plazo. No es otro modelo, una suscripción Pro ni una modalidad comercial de la API. `standard` respeta `OPENAI_REVIEW_EFFORT=high`. OpenAI documenta [los esfuerzos admitidos por Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol).
+
+Límites configurados y aplicados:
+
+- `VISION_MAX_TOKENS=4096`, `DEEPSEEK_MAX_TOKENS=8192`, `REVIEW_MAX_TOKENS=8192`: por respuesta, incluido razonamiento cuando corresponde. `MAX_OUTPUT_TOKENS=8192` es el respaldo si una etapa no tiene límite propio y el límite del analista Sol en perfil sol.
+- `MODEL_TIMEOUT_SECONDS=45`: plazo máximo de cada petición IA, además del timeout del SDK; también limita la espera del ajuste estadístico. `AI_TIMEOUT_SECONDS=90`: presupuesto conjunto para todas las rondas de análisis y la revisión; se aplica separadamente como plazo externo de extracción.
+- `MAX_ANALYSIS_SECONDS=240`: máximo del trabajo completo, incluidas consultas deportivas. La revisión solo recibe el tiempo IA restante; seis rondas no garantizan seis peticiones completas de 45 segundos.
+- `MAX_HISTORY_AGE_DAYS=30`: si el último resultado disponible es más antiguo, se conservan las estadísticas descriptivas pero se omite la predicción. No recorta el entrenamiento a 30 días.
+- `MAX_QUOTE_AGE_HOURS=24`: una cuota más antigua, o con hora futura por más de cinco minutos, conserva su probabilidad implícita y queda sin EV. Es necesario corregir la observación con una cuota realmente revisada.
+
+`DEEPSEEK_THINKING=false` desactiva thinking explícitamente y omite `reasoning_effort` en la petición. Ningún límite equivale a un presupuesto monetario. Al activar revisión, el coste total se muestra desconocido para evitar confundir el coste del analista con el de ambas etapas. `analyst_estimated_cost_usd` mantiene la estimación del analista si su tarifa está configurada; la revisión conserva su uso bruto y coste desconocido.
+
+Las nuevas pruebas cubren lectura de la plantilla híbrida, presets standard/pro, revisión desactivada sin llamadas, conservación de probabilidades/EV, fallo de revisión sin pérdida del informe, cuotas antiguas/futuras, históricos antiguos, thinking desactivado y cancelación de peticiones por timeout. Todas son offline con claves de prueba; no se probó consumo real.
+
 ## Sol: un modelo para las dos tareas
 
 ```dotenv

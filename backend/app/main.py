@@ -65,7 +65,9 @@ def capabilities():
         'vision_configured':bool(settings.openai_api_key and settings.vision_model),
         'analyst_configured':settings.analyst_configured,
         'ai':settings.ai_summary(),
-        'review_enabled':False,'cost':'Desconocido sin tarifas configuradas y fechadas.',
+        'review_enabled':settings.review_enabled,
+        'review_configured':bool(settings.openai_api_key and settings.openai_review_model),
+        'cost':'Desconocido sin tarifas configuradas y fechadas.',
         'providers':['demo-synthetic'] if settings.app_mode=='demo' else ['ESPN','sports-skills','nba_api']}
 
 
@@ -82,7 +84,7 @@ def demo_ticket(sport:str='football'):
 @app.post('/api/tickets/extract')
 async def extract_ticket(file: UploadFile=File()):
     raw=await file.read(settings.max_image_bytes+1)
-    try: return await asyncio.wait_for(extract(raw),40)
+    try: return await asyncio.wait_for(extract(raw),settings.ai_timeout_seconds)
     except ValueError as e: raise HTTPException(422,str(e))
     except Exception: raise HTTPException(502,'Extractor no disponible, modelo inválido o timeout. Revisa configuración; puedes introducir los datos manualmente.')
 
