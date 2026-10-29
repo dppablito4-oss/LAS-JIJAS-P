@@ -60,14 +60,14 @@ def health(): return {'status':'ok','mode':settings.app_mode}
 @app.get('/api/capabilities')
 def capabilities():
     return {'mode':settings.app_mode,'timezone':settings.app_timezone,'competitions':['Premier League','LaLiga','NBA'],
-        'football':'1X2 y totales con medio gol. Dixon-Coles experimental; requiere históricos con identidad verificada.',
+        'football':'1X2 y totales de 0,5 a 9,5 con medio gol. Dixon-Coles experimental; requiere históricos recientes con identidad verificada.',
         'nba':'Solo descriptivo. Ritmo, eficiencias y lesiones pendientes de cobertura.',
         'vision_configured':bool(settings.openai_api_key and settings.vision_model),
-        'analyst_configured':settings.analyst_configured,
-        'ai':settings.ai_summary(),
+        'analyst_configured':settings.analyst_configured,'ai':settings.ai_summary(),
         'review_enabled':settings.review_enabled,
-        'review_configured':bool(settings.openai_api_key and settings.openai_review_model),
-        'cost':'Desconocido sin tarifas configuradas y fechadas.',
+        'review_configured':bool(settings.review_enabled and settings.openai_api_key and settings.openai_review_model),
+        'ai_models':{'vision':settings.vision_model,'review':settings.openai_review_model,'analyst':settings.analyst_model},
+        'cost':'Desconocido sin tarifas por modelo; extracción y revisión OpenAI no incluidas en la tarifa DeepSeek.',
         'providers':['demo-synthetic'] if settings.app_mode=='demo' else ['ESPN','sports-skills','nba_api']}
 
 
@@ -107,6 +107,8 @@ async def create_analysis(request:AnalysisRequest,idempotency_key:str=Header(min
         if existing:
             if existing.digest!=digest: raise HTTPException(409,'La clave de idempotencia ya se usó con otros datos.')
             return serial(existing)
+        if settings.app_mode=='real' and any(s.observed_at>now() or s.starts_at and s.observed_at>=s.starts_at for s in request.selections):
+            raise HTTPException(422,'La cuota observada debe ser anterior al corte actual y al inicio del evento.')
         if request.parent_id and not db.get(Job,request.parent_id): raise HTTPException(404,'Análisis original no encontrado.')
         if queue.full(): raise HTTPException(429,'Cola llena. Espera un momento.')
         job=Job(id=str(uuid.uuid4()),key=idempotency_key,digest=digest,created_at=now().isoformat(),status='queued',request=body)

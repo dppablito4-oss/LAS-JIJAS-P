@@ -1,8 +1,6 @@
 """Read-only providers. Never replace failed live requests with demo values."""
-import asyncio
-import csv
-import io
 import json
+import math
 import random
 from datetime import datetime, timedelta, timezone
 import httpx
@@ -88,6 +86,8 @@ async def resolve(s: Selection):
             events.append(Event(id=f'espn:{slug}:{e["id"]}',sport=s.sport,competition=s.competition,
                 season=season,starts_at=e['date'],home=home,away=away,
                 home_id=h['team']['id'],away_id=a['team']['id'],provider='ESPN',reference=url))
+            events[-1].home_abbreviation=h['team'].get('abbreviation')
+            events[-1].away_abbreviation=a['team'].get('abbreviation')
     unique={e.id:e for e in events}
     return Evidence(status='partial' if unique else 'needs_review',retrieved_at=min(retrieved) if retrieved else now(),source={'provider':'ESPN','reference':f'https://site.api.espn.com/apis/site/v2/sports/{slug}/scoreboard'},
         data={'candidates':[e.model_dump(mode='json') for e in unique.values()]},warnings=['Cobertura de calendario no garantizada. Verifica categoría, temporada y hora.'])
@@ -105,24 +105,30 @@ async def histories(event: Event, cutoff):
         games={}
         for r in raw.get('LeagueGameLog',[]): games.setdefault(r['GAME_ID'],[]).append(r)
         rows=[]
+        known={abbreviation:name for abbreviation,name in [(event.home_abbreviation,event.home),(event.away_abbreviation,event.away)] if abbreviation}
         for pair in games.values():
             if len(pair)!=2: continue
             h=next((r for r in pair if 'vs.' in r['MATCHUP']),None)
             a=next((r for r in pair if '@' in r['MATCHUP']),None)
             if not h or not a: continue
             date=datetime.fromisoformat(h['GAME_DATE'].split('T')[0]).replace(tzinfo=timezone.utc)+timedelta(days=1,hours=12)
-            # Date-only game logs use next midnight UTC, conservatively excluding same-day results.
-            rows.append(dict(date=date.isoformat(),home=h['TEAM_NAME'],away=a['TEAM_NAME'],hg=h['PTS'],ag=a['PTS'],retrieved_at=raw.get('_retrieved_at')))
+            # Date-only logs become available at next day 12:00 UTC for conservative cuts.
+            home=known.get(h.get('TEAM_ABBREVIATION'),h['TEAM_NAME'])
+            away=known.get(a.get('TEAM_ABBREVIATION'),a['TEAM_NAME'])
+            rows.append(dict(date=date.isoformat(),home=home,away=away,hg=h['PTS'],ag=a['PTS'],
+                             home_id=str(h['TEAM_ID']),away_id=str(a['TEAM_ID']),event_id=str(h['GAME_ID']),
+                             provider='NBA Stats',retrieved_at=raw.get('_retrieved_at')))
         return [r for r in rows if r['date']<cutoff], 'https://stats.nba.com/stats/leaguegamelog'
     competition='premier-league' if event.competition=='Premier League' else 'la-liga'
     year=int(event.season)
     rows=[]
+    seen={}
     references=[]
     for y in [year-1,year]:
         season_id=f'{competition}-{y}'
         async def fetch(sid=season_id):
             raw=await query('football-season',sid,18)
-            if not raw.get('status'): raise ValueError('Fuente hist?rica no disponible')
+            if not raw.get('status'): raise ValueError('Fuente histórica no disponible')
             return raw
         try:
             raw=await cached('sports-skills:season:'+season_id+':'+cutoff[:10],fetch,21600)
@@ -131,9 +137,8 @@ async def histories(event: Event, cutoff):
         source=raw.get('data',{}).get('source')
         # openfootball does not expose the ESPN team identity namespace.
         # Do not join it to ESPN events by names alone.
-        if source=='openfootball': continue
-        reference=(f'https://github.com/openfootball/football.json/tree/master/{y}-{y+1}' if source=='openfootball'
-            else f'https://site.api.espn.com/apis/site/v2/sports/{LEAGUES[event.competition][0]}/teams/{event.home_id}/schedule?season={y}')
+        if source!='ESPN': continue
+        reference=f'https://site.api.espn.com/apis/site/v2/sports/{LEAGUES[event.competition][0]}/teams/{event.home_id}/schedule?season={y}'
         references.append(reference)
         for r in raw.get('data',{}).get('schedules',[]):
             if r.get('status')!='closed': continue
@@ -142,12 +147,25 @@ async def histories(event: Event, cutoff):
             if date.isoformat()>=cutoff: continue
             h=next(x['team'] for x in r['competitors'] if x['qualifier']=='home')
             a=next(x['team'] for x in r['competitors'] if x['qualifier']=='away')
+            if not str(h.get('id','')).isdigit() or not str(a.get('id','')).isdigit() or str(h['id'])==str(a['id']):
+                raise ValueError('Identidad ESPN no válida')
             known={event.home_id:event.home,event.away_id:event.away}
             home=known.get(str(h['id']),h['name']);away=known.get(str(a['id']),a['name'])
             scores=r.get('scores',{})
             if scores.get('home') is None or scores.get('away') is None: continue
-            rows.append(dict(date=date.isoformat(),home=home,away=away,hg=int(scores['home']),ag=int(scores['away']),
-                             home_id=str(h['id']),away_id=str(a['id']),event_id=r['id'],season=season_id,source_reference=reference,retrieved_at=raw.get('_retrieved_at')))
+            if not str(r.get('id','')).isdigit():raise ValueError('ID de evento ESPN no válido')
+            goals=[float(scores['home']),float(scores['away'])]
+            if any(not math.isfinite(value) or not value.is_integer() or not 0<=value<=100 for value in goals):
+                raise ValueError('Marcador no válido')
+            hg,ag=map(int,goals)
+            identity=(competition,str(r['id']))
+            fingerprint=(date.isoformat(),str(h['id']),str(a['id']),hg,ag)
+            if identity in seen:
+                if seen[identity]!=fingerprint: raise ValueError('Históricos contradictorios para el mismo evento')
+                continue
+            seen[identity]=fingerprint
+            rows.append(dict(date=date.isoformat(),home=home,away=away,hg=hg,ag=ag,
+                             provider='ESPN',home_id=str(h['id']),away_id=str(a['id']),event_id=str(r['id']),season=season_id,source_reference=reference,retrieved_at=raw.get('_retrieved_at')))
     if not rows: raise ValueError('No hay históricos disponibles')
     return rows, references[-1]
 

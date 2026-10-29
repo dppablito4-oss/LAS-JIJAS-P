@@ -8,11 +8,13 @@ from . import providers
 from .analytics import evaluate, dependencies
 from .tools import ToolBox
 from .llm import analyze, review_report
+from .isolated import query
 
 
 async def build_report(request,scope='analysis'):
+    deadline=asyncio.get_running_loop().time()+settings.max_analysis_seconds-2
     cutoff='2026-10-29T12:00:00+00:00' if settings.app_mode=='demo' else now().isoformat()
-    contexts=[];results=[];usage=[]
+    contexts=[];results=[];usage=[];models={}
     for s in request.selections:
         c={'selection':s,'warnings':[]}
         try:
@@ -32,20 +34,24 @@ async def build_report(request,scope='analysis'):
                     c['data_as_of']=datetime.fromisoformat(max((r['date'] for r in rows),default=cutoff))
                     dates=[datetime.fromisoformat(r['retrieved_at']) for r in rows if r.get('retrieved_at')]
                     if dates: c['data_retrieved_at']=min(dates)
-                    c['history_stale']=bool(rows and (datetime.fromisoformat(cutoff)-c['data_as_of']).total_seconds()>settings.max_history_age_days*86400)
-                    if c['history_stale']:
-                        c['warnings'].append(f'Históricos con más de {settings.max_history_age_days} días de antigüedad; cobertura reciente incompleta. Se omite la predicción.')
+                    if rows and (datetime.fromisoformat(cutoff)-c['data_as_of']).total_seconds()>settings.max_history_age_days*86400:
+                        c['stale_history']=True
+                        c['history_stale']=True
+                        c['warnings'].append(f'Históricos con más de {settings.max_history_age_days} días de antigüedad; probabilidad aplicable y EV suspendidos.')
                 except Exception:
                     c['warnings'].append('Fuente histórica no disponible o timeout. No se utilizaron datos demo.')
-                if s.sport=='football' and c.get('rows') and not c.get('history_stale'):
-                    from .model import predict
+                if s.sport=='football' and c.get('rows') and not c.get('stale_history'):
                     try:
-                        c['model']=await asyncio.wait_for(asyncio.to_thread(predict,c['rows'],event.home,event.away,cutoff),settings.model_timeout_seconds)
+                        if event.id not in models:
+                            payload={'rows':c['rows'],'home':event.home,'away':event.away,'cutoff':cutoff,'xi':settings.model_xi,
+                                     'total_lines':[x.line for x in request.selections if x.event_id==event.id and x.market=='total' and x.line is not None]}
+                            if settings.app_mode=='real':payload.update(home_id=event.home_id,away_id=event.away_id)
+                            models[event.id]=await query('football-model',payload,settings.model_timeout_seconds)
+                        c['model']=models[event.id]
                     except Exception:
                         c['model']={'status':'unavailable','reason':'El ajuste no se completó o superó el límite de tiempo.'}
                 if s.sport=='football' and settings.app_mode=='real':
                     # Only the public read-only summary module is called; no trading modules.
-                    from .isolated import query
                     try:
                         raw=await query('football-context',event.id.split(':')[-1],12)
                         c['context']={'provider_status':raw.get('status'),'reference':event.reference,
@@ -59,15 +65,21 @@ async def build_report(request,scope='analysis'):
             if s.market=='1x2' and s.side in ['home','draw','away']: p=model['home_draw_away'][['home','draw','away'].index(s.side)]
             if s.market=='total' and str(s.line) in model.get('totals',{}) and s.side in ['over','under']:
                 over=model['totals'][str(s.line)];p=over if s.side=='over' else 1-over
-        c['market']=evaluate(s,p)
         if settings.app_mode=='real':
-            quote_age=(datetime.fromisoformat(cutoff)-s.observed_at).total_seconds()/3600
-            c['quote_age_hours']=quote_age
-            c['quote_stale']=quote_age>settings.max_quote_age_hours or quote_age<-.083333
-            if c['quote_stale']:
-                c['market']['ev']=None
-                if c['market']['status']=='ok':c['market']['status']='partial'
-                c['warnings'].append(f'Cuota observada hace {quote_age:.1f} h: supera el límite de {settings.max_quote_age_hours:g} h o tiene fecha futura. EV omitido; actualiza su hora de observación.')
+            instant=datetime.fromisoformat(cutoff)
+            c['quote_age_hours']=(instant-s.observed_at).total_seconds()/3600
+            c['quote_stale']=bool(s.observed_at>instant or s.starts_at and s.observed_at>=s.starts_at or c['quote_age_hours']>settings.max_quote_age_hours)
+            if s.observed_at>instant or s.starts_at and s.observed_at>=s.starts_at:
+                c['warnings'].append('Cuota posterior al corte o al inicio: EV suspendido.')
+                p=None
+            elif (instant-s.observed_at).total_seconds()>settings.max_quote_age_hours*3600:
+                c['warnings'].append('Cuota antigua: vuelve a comprobar el precio; EV suspendido.')
+                p=None
+            if c.get('stale_history'):p=None
+        c['market']=evaluate(s,p)
+        c['warnings'].extend(c['market']['warnings'])
+        if s.market=='total' and c['market']['status']=='unsupported':
+            c['warnings'].append('Totales modelables: partido completo, de 0,5 a 9,5 goles, solo medios goles.')
         contexts.append(c)
     box=ToolBox(contexts,cutoff)
     for i,c in enumerate(contexts):
@@ -78,29 +90,36 @@ async def build_report(request,scope='analysis'):
             'resolution':c['resolution'],'market':c['market'],'model':c.get('model'),
             'evidence':evidence,'warnings':c['warnings'],
             'quote_age_hours':c.get('quote_age_hours'),
-            'conclusion':'Datos insuficientes' if not ev or not c.get('rows') or c.get('history_stale') or c.get('quote_stale') else 'Sin ventaja demostrada',
+            'conclusion':'Datos insuficientes' if not ev or not c.get('rows') or c.get('stale_history') or c.get('quote_stale') else 'Sin ventaja demostrada',
             'model_note':'Modelo experimental; EV orientativo, sin ventaja validada.' if c.get('model',{}).get('status')=='experimental' else 'Sin probabilidad propia sustentada. NBA: análisis descriptivo.' if s.sport=='nba' else 'Modelo no disponible.'})
     analyst='Demo: explicación determinista; no se consultó IA.'
-    review={'status':'disabled'}
+    review={'status':'disabled','model':settings.openai_review_model}
     if settings.app_mode=='real':
-        deadline=asyncio.get_running_loop().time()+settings.ai_timeout_seconds
-        try: analyst=await asyncio.wait_for(analyze(box,usage,scope),settings.ai_timeout_seconds)
-        except Exception: analyst='Analista no disponible o timeout. Se conserva evidencia y uso de rondas completadas.'
+        ai_deadline=min(deadline,asyncio.get_running_loop().time()+settings.ai_timeout_seconds)
+        remaining=ai_deadline-asyncio.get_running_loop().time()
+        stages=2 if settings.review_enabled and settings.openai_api_key else 1
+        try:
+            if remaining<=0:raise TimeoutError()
+            analyst=await asyncio.wait_for(analyze(box,usage,scope),remaining/stages)
+        except Exception:analyst='Analista no disponible o timeout. Se conserva el informe y el uso conocido.'
         if settings.review_enabled:
-            remaining=deadline-asyncio.get_running_loop().time()
-            if remaining<=0:
-                review={'status':'unavailable','reason':'Presupuesto de tiempo IA agotado antes de revisar.'}
-            else:
-                try:review=await asyncio.wait_for(review_report(results,analyst,scope),remaining)
-                except Exception:review={'status':'unavailable','reason':'Revisión no disponible o timeout. El informe y el uso conocido se conservan.'}
+            try:
+                remaining=ai_deadline-asyncio.get_running_loop().time()
+                if remaining<=0:raise TimeoutError()
+                review=await asyncio.wait_for(review_report(results,analyst,usage,scope),remaining)
+            except Exception:review={'status':'unavailable','model':settings.openai_review_model,'reason':'Timeout o fallo de revisión. Se conserva el informe original.'}
+    review_legacy={'status':'ok' if review['status']=='completed' else review['status'],
+                   'model':review.get('model',settings.openai_review_model),
+                   'comment':review.get('result',{}).get('summary',review.get('reason',''))}
     cost=None
+    analyst_usage=[u for u in usage if u.get('stage')!='review']
     if not usage: cost=0 if settings.app_mode=='demo' else None
-    elif settings.input_price is not None and settings.output_price is not None and settings.price_date and settings.price_model==settings.analyst_model:
-        cost=sum(u.get('prompt_tokens',u.get('input_tokens',0))*settings.input_price+u.get('completion_tokens',u.get('output_tokens',0))*settings.output_price for u in usage)/1e6
+    elif (analyst_usage and settings.price_model==settings.analyst_model and all(u.get('provider')==settings.analyst_provider and u.get('model')==settings.price_model for u in analyst_usage)
+          and settings.input_price is not None and settings.output_price is not None and settings.price_date):
+        cost=sum(u.get('prompt_tokens',u.get('input_tokens',0))*settings.input_price+u.get('completion_tokens',u.get('output_tokens',0))*settings.output_price for u in analyst_usage)/1e6
     return {'mode':settings.app_mode,'label':'Datos de demostración' if settings.app_mode=='demo' else 'Datos de proveedores externos',
         'cutoff':cutoff,'selections':results,'warnings':dependencies(request.selections),
-        'joint_probability':None,'analyst_comment':analyst,'review':review,'ai':settings.ai_summary(),'usage':usage,
-        'estimated_cost_usd':cost if review['status']=='disabled' else None,'analyst_estimated_cost_usd':cost,'price_date':settings.price_date or None,
+        'joint_probability':None,'analyst_comment':analyst,'ai':settings.ai_summary(),'ai_review':review_legacy,'review':review,'usage':usage,'estimated_cost_usd':cost if review['status']=='disabled' else None,'analyst_estimated_cost_usd':cost,'price_date':settings.price_date or None,
         'final_result':None,'conclusion':'Datos insuficientes' if any(r['conclusion']=='Datos insuficientes' for r in results) else 'Sin ventaja demostrada'}
 
 

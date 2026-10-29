@@ -4,7 +4,7 @@ Configuración verificada el **29/10/2026** en documentación oficial. Los IDs s
 
 ## Actualización: perfil hybrid con revisión
 
-El `.env` local está adaptado a `APP_MODE=real`, `AI_PROFILE=hybrid`, conservando exactamente ambos valores de claves anteriores. La suite actual tiene **40 tests aprobados**; la descripción de 30 pruebas de la implementación anterior se conserva más abajo como historial.
+El `.env` local está adaptado a `APP_MODE=real`, `AI_PROFILE=hybrid`, conservando exactamente ambos valores de claves anteriores. La suite unificada con GitHub tiene **54 tests aprobados**. Los conteos previos de 30/40 pruebas se conservan más abajo como historial; véase [INTEGRATION_REPORT](INTEGRATION_REPORT.md).
 
 ```dotenv
 AI_PROFILE=hybrid
@@ -23,7 +23,7 @@ Recorrido: Luna extrae, DeepSeek analiza con herramientas y Sol revisa el inform
 
 `OPENAI_REVIEW_ENABLED` es el interruptor explícito de revisión en cualquier perfil. Para recuperar la configuración ahorradora cambia también `DEEPSEEK_MODEL=deepseek-flash` y `OPENAI_REVIEW_ENABLED=false`; cambiar solo `AI_PROFILE` no sustituye los modelos personalizados ni apaga un interruptor habilitado.
 
-`OPENAI_REVIEW_MODE=pro` es un **preset local de esta aplicación**: usa `reasoning.effort=max` con el mismo `gpt-6.1-sol`, sin ampliar automáticamente el límite de tokens ni el plazo. No es otro modelo, una suscripción Pro ni una modalidad comercial de la API. `standard` respeta `OPENAI_REVIEW_EFFORT=high`. OpenAI documenta [los esfuerzos admitidos por Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol).
+`OPENAI_REVIEW_MODE=pro` se envía como `reasoning.mode=pro`; `OPENAI_REVIEW_EFFORT=high` se conserva de forma independiente. Es una corrección frente al preset local anterior que lo equiparaba a esfuerzo max. No cambia el ID del modelo, pero puede aumentar trabajo y consumo. Se verificó en [OpenAI Docs](https://developers.openai.com/api/docs/guides/reasoning#reasoning-mode) y en el SDK instalado.
 
 Límites configurados y aplicados:
 

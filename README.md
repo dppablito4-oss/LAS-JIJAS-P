@@ -1,5 +1,7 @@
 # Las Jijas · Asistente deportivo local
 
+Integración local con GitHub `b32a898`: **54 pruebas offline aprobadas**, frontend compilado y valores de `.env` conservados. Se unificaron las correcciones de auditoría con revisión estructurada y límites por etapa. Detalles: [reporte de integración](docs/INTEGRATION_REPORT.md).
+
 MVP 0.1 en español, implementado a partir de [la orden de trabajo](docs/ORDEN_CODEX_MVP.md).
 React/TypeScript/Vite + FastAPI/Python 3.11 + SQLAlchemy/SQLite. Investigación personal de fútbol prepartido y NBA descriptiva. No conecta cuentas de apuestas ni ejecuta operaciones.
 
@@ -46,29 +48,44 @@ Edita `.env` localmente y reinicia:
 
 ```dotenv
 APP_MODE=real
-AI_PROFILE=sol
+AI_PROFILE=hybrid
 OPENAI_API_KEY=
-OPENAI_SINGLE_MODEL=gpt-6.1-sol
 OPENAI_VISION_MODEL=gpt-6-luna
+OPENAI_REVIEW_MODEL=gpt-6.1-sol
 DEEPSEEK_API_KEY=
-DEEPSEEK_MODEL=deepseek-flash
+DEEPSEEK_MODEL=deepseek-v4-pro
 ```
 
-Hay tres perfiles. `AI_PROFILE=sol` utiliza **gpt-6.1-sol tanto para visión como para análisis**, con la misma clave OpenAI. `AI_PROFILE=economy` usa el modelo de visión OpenAI y el analista DeepSeek configurados; para ahorro elige Luna, `deepseek-flash` y revisión desactivada. `AI_PROFILE=hybrid` identifica el recorrido Luna → DeepSeek → revisión Sol. El `.env` adaptado usa híbrido con DeepSeek Pro y `OPENAI_REVIEW_ENABLED=true`. Este interruptor controla la revisión en cualquier perfil. Reinicia después de cambiar `.env`; `APP_MODE=demo` no consume APIs.
+No pongas claves en el frontend o en Git. No se necesitan para consultar calendarios y estadísticas públicas ni para el informe determinista. El perfil `AI_PROFILE=hybrid` usa **GPT-6 Luna** para capturas, **DeepSeek V4 Pro con razonamiento** para el analista con herramientas y **GPT-6.1 Sol** para una revisión final independiente. La revisión no cambia probabilidades, EV ni conclusión del motor. También se conservan `AI_PROFILE=sol` (Sol para visión y análisis mediante Responses) y `AI_PROFILE=economy` (Luna y DeepSeek sin revisión adicional). Consulta [los perfiles](docs/AI_PROFILES.md).
 
-No pongas claves en el frontend o en Git. No se necesitan para fuentes deportivas públicas ni para el informe determinista. Los IDs se verificaron en [OpenAI Docs](https://developers.openai.com/api/docs/models/gpt-6.1-sol) y el [catálogo DeepSeek](https://api-docs.deepseek.com/quick_start/pricing/). El acceso depende de tu cuenta. Sol usa Responses API; DeepSeek conserva su protocolo de razonamiento. Un modelo desconocido causa error sin cambio automático. **40 pruebas offline aprobadas; no se hicieron llamadas de IA facturables.** Detalles y límites efectivos: [perfiles IA](docs/AI_PROFILES.md).
+Los valores de `.env.example` son `OPENAI_VISION_MODEL=gpt-6-luna`, `OPENAI_REVIEW_MODEL=gpt-6.1-sol` y `DEEPSEEK_MODEL=deepseek-v4-pro`. Comprueba acceso de tu cuenta; un modelo no disponible produce un estado de indisponibilidad y no se sustituye silenciosamente. La documentación oficial de DeepSeek distingue Pro (`deepseek-v4-pro`) de V4.1 Flash (`deepseek-flash`); no se usa un ID inventado `v4.1-pro`.
+
+OpenAI usa Responses con `store=False`: esfuerzo `low` para visión y `high` para revisión. `OPENAI_REVIEW_MODE=standard` admite `pro` si quieres más trabajo del modelo, latencia y consumo. `OPENAI_REVIEW_ENABLED=false` desactiva esa revisión. DeepSeek usa Chat Completions con `DEEPSEEK_THINKING=true` y `DEEPSEEK_REASONING_EFFORT=high` (también low/max). Se conserva su `reasoning_content` entre rondas en memoria; no se persiste. Las claves permanecen en el servidor.
+
+Referencias: [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [modo Pro OpenAI](https://developers.openai.com/api/docs/guides/reasoning#reasoning-mode), [modelos DeepSeek](https://api-docs.deepseek.com/), [razonamiento y herramientas](https://api-docs.deepseek.com/guides/thinking_mode/).
+
+Para comprobar acceso sin generar respuestas, desde la raíz:
+
+```powershell
+$env:PYTHONPATH='backend'
+.venv/Scripts/python scripts/check_ai.py
+```
+
+`scripts/check_ai.py --smoke` hace llamadas **facturables** con datos sintéticos, bajo los límites de `.env`, y registra uso en la base separada `data/ai-smoke.db`. Es optativo: la instalación y los tests no lo ejecutan. La integración tiene pruebas de solicitudes y respuestas simuladas; **no se ha validado una llamada IA real en esta actualización porque faltan claves**. Que un modelo figure en la lista no garantiza cuota disponible ni éxito de una llamada posterior.
 
 Consulta `/api/capabilities` para configuración pendiente. La disponibilidad real puede variar por red, temporada y proveedor. No hay sustitución de errores reales por fixtures demo.
 
 ## Datos y modelo
 
 - Calendarios: ESPN, separados por Premier League masculina, LaLiga masculina y NBA. Debes confirmar la identidad; no se resuelve por nombre solamente.
-- Fútbol histórico: `sports-skills` detrás de adaptador, API pública de temporadas y resumen. El paquete puede usar ESPN u openfootball; el adaptador solo admite históricos con identidad ESPN y descarta el fallback openfootball sin una equivalencia de IDs comprobada. Las identidades de equipos se relacionan mediante IDs del proveedor cuando existen. Sin identidad/muestra suficiente, el modelo queda no disponible.
+- Fútbol histórico: `sports-skills` detrás de adaptador. Solo se admite la fuente explícita ESPN con IDs válidos. Se deduplica por competición/evento; duplicados contradictorios invalidan la consulta. El modelo utiliza IDs ESPN estables, con nombres solo como etiquetas. Sin identidad/muestra suficiente, queda no disponible.
 - NBA: `nba_api` con logs de temporada, registros, últimos partidos y descanso aproximado. Ritmo, eficiencias, bajas y predictor propios no están disponibles; aparecen como ausencias explícitas.
-- Fútbol: Dixon-Coles de `penaltyblog`, importación diferida, ponderación exponencial `MODEL_XI`, corte anterior al evento, mínimo 60 partidos y 5 apariciones por equipo. Distribución normalizada de goles; mercados 1X2 y total de partido con medio gol.
-- Evaluación inicial: división temporal 80/20, hasta 30 partidos de validación, baseline de frecuencias 1X2 del entrenamiento con suavizado. Brier multiclase (suma de tres errores), log loss y calibración por intervalos. Siempre **experimental**, incluso si supera el baseline en la muestra inicial.
+- Fútbol: Dixon-Coles de `penaltyblog`, importación diferida, ponderación exponencial `MODEL_XI`, corte anterior al evento, mínimo 60 partidos y 5 apariciones por equipo. Distribución normalizada de goles; mercados 1X2 y totales de partido de 0,5 a 9,5, solo medios goles. Se calcula la línea solicitada.
+- Evaluación actual: 80% inicial y bloques cronológicos con entrenamiento creciente sobre todo el bloque posterior, sin separar timestamps simultáneos. Brier multiclase, log loss, baseline suavizado por entrenamiento, calibración de las tres clases y evaluación binaria por línea de total. Se registran IDs, omisiones y hash de entrada. Los intervalos normales son descriptivos, no corrigen toda la dependencia entre partidos. Siempre **experimental**. `docs/MODEL_EVALUATION.json` conserva la evaluación histórica del protocolo anterior; no representa una nueva evaluación de esta versión.
 - El EV experimental es un resultado del modelo sin validación económica. La conclusión no presenta ventaja demostrada. Las frecuencias históricas son conteos, no probabilidades futuras.
 - Solo se elimina margen proporcional con todas las cuotas del mercado mutuamente excluyente. Líneas enteras, cuartos, props, vivo y otros periodos no reciben EV binario.
+- La cuota del lado seleccionado debe coincidir con el mercado completo para quitar margen. Cambiar evento, mercado, línea o precio invalida las cuotas completas del formulario.
+- En real se rechazan cuotas observadas después del corte o del inicio. Se suspende el EV para precios de más de `MAX_QUOTE_AGE_HOURS` (24) y la probabilidad aplicable/EV para históricos de más de `MAX_HISTORY_AGE_DAYS` (30). No se reemplazan por datos sintéticos.
 
 Fechas UTC, interfaz America/Lima. Las fechas de resultados usadas para el corte son conservadoras: fútbol inicio +6 h; NBA, fecha de calendario +1 día a las 12:00 UTC. No son sellos oficiales de actualización. No hay evaluación retrospectiva de eventos ya iniciados usando datos actuales.
 
@@ -117,10 +134,10 @@ FastAPI documenta contratos en `/docs`. Rutas: health, capabilities, tickets/ext
 
 Ejecuta **un solo proceso** de servidor y un worker local. La cola tiene capacidad 25; su estado se conserva en SQLite. Al reiniciar, trabajos queued/running pasan a interrupted; crea una revisión para continuar. `--workers` con varios procesos no está soportado en esta versión.
 
-Límites: 20 selecciones, 6 rondas IA, 12 llamadas de herramienta por ronda, 3 paralelas, 1.800 tokens de salida por respuesta y 120 segundos por análisis, configurables donde indica `.env.example`. Las consultas SDK síncronas se aíslan en procesos terminables para evitar consultas que sobrevivan indefinidamente al timeout. Una consulta del SDK puede realizar varios HTTP internos.
+Límites: 20 selecciones, 6 rondas IA, 12 llamadas de herramienta por ronda y 3 paralelas. Presupuestos por respuesta: visión 4.096 tokens, analista 8.192 y revisión 8.192, incluidos tokens de razonamiento. Plazo global 240 s, cálculo 45 s y cada etapa IA hasta 90 s, ajustado al plazo restante. Configuración en `.env.example`. Consultas SDK y ajuste estadístico se aíslan en procesos terminables; selecciones del mismo evento/corte comparten ajuste. Una consulta SDK puede realizar varios HTTP internos.
 
 Las imágenes se limitan por bytes, formato y dimensiones, se normalizan a JPEG sin metadatos y no se persisten. Se guardan localmente las selecciones revisadas, informes, caché y uso API. Los datos originales de temporada permanecen en caché para inspección local. TTL: calendario 5 min, NBA 1 h, fútbol 6 h. El sello de descarga original se conserva en caché; cada fila histórica mantiene su procedencia cuando está disponible. La retención local actual es indefinida hasta borrado manual; no hay limpieza programada. El borrado de un análisis no elimina caché ni registro de uso API.
 
-El uso devuelto por cada API se registra en SQLite inmediatamente, incluso si falla una ronda posterior. La estimación de coste del informe cubre el analista seleccionado y requiere `INPUT_PRICE`, `OUTPUT_PRICE` (USD por millón), `PRICE_DATE` y `PRICE_MODEL` igual al ID del analista activo. Si cambias el modelo sin actualizar su tarifa, el coste vuelve a desconocido. La extracción informa uso/coste desconocido por separado; no se calcula factura total ni se promete un tope monetario exacto. La estimación lineal no reproduce descuentos por caché, franjas horarias, impuestos o tarifas regionales.
+El uso devuelto por cada API se registra en SQLite inmediatamente, incluso si falla una ronda posterior. La estimación del informe solo se calcula cuando el uso corresponde exclusivamente al analista activo y hay `INPUT_PRICE`, `OUTPUT_PRICE`, `PRICE_DATE` y `PRICE_MODEL` coincidente con su ID. Si interviene la revisión OpenAI, queda desconocido hasta implementar precios por modelo. La extracción mantiene su uso separado; no se calcula factura total. No se deducen precios comerciales ni se promete un tope monetario exacto.
 
 Documentación: [dependencias](docs/DEPENDENCIES.md), [arquitectura](docs/ARCHITECTURE.md), [validación](docs/VALIDATION.md), [pendientes](docs/ROADMAP.md).

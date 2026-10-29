@@ -19,7 +19,7 @@ def test_hybrid_template_is_accepted():
     assert s.model_timeout_seconds==45 and s.ai_timeout_seconds==90
 
 
-@pytest.mark.parametrize('mode,effort',[('standard','high'),('pro','max')])
+@pytest.mark.parametrize('mode,effort',[('standard','high'),('pro','high')])
 def test_reviewer_preserves_engine_and_uses_bounded_preset(monkeypatch,mode,effort):
     configure(monkeypatch,'hybrid')
     monkeypatch.setattr(settings,'openai_review_enabled',True)
@@ -44,6 +44,7 @@ def test_reviewer_preserves_engine_and_uses_bounded_preset(monkeypatch,mode,effo
     r=asyncio.run(llm.review_report(selections,'Comentario original','test-job'))
     assert r['status']=='completed' and selections==original
     assert requests[0]['model']=='gpt-6.1-sol' and requests[0]['reasoning']['effort']==effort
+    assert requests[0]['reasoning']['mode']==mode
     assert requests[0]['max_output_tokens']==8192 and requests[0]['store'] is False
     assert 'tools' not in requests[0] and 'score_distribution' not in requests[0]['input']
     assert ledger[0][:3]==('test-job','openai','gpt-6.1-sol')
@@ -81,11 +82,12 @@ def prepare_report(monkeypatch,history_age=1,quote_age=1):
     event=providers.demo_events()[0]
     async def resolve(s):return Evidence(status='ok',source={'provider':'test','reference':'test:event'},data={'candidates':[event.model_dump(mode='json')]})
     async def histories(e,c):return [dict(date=(cutoff-timedelta(days=history_age)).isoformat(),home=e.home,away=e.away,hg=2,ag=0)],'test:history'
-    async def context(*args):return {'status':True}
+    async def context(kind,*args):
+        return {'status':'experimental','home_draw_away':[.6,.2,.2]} if kind=='football-model' else {'status':True}
     async def analyze(*args):return 'Comentario fijo.'
     monkeypatch.setattr(providers,'resolve',resolve)
     monkeypatch.setattr(providers,'histories',histories)
-    monkeypatch.setattr('app.isolated.query',context)
+    monkeypatch.setattr(service,'query',context)
     monkeypatch.setattr(service,'analyze',analyze)
     monkeypatch.setattr(model,'predict',lambda *args:{'status':'experimental','home_draw_away':[.6,.2,.2]})
     s=Selection(home=event.home,away=event.away,competition=event.competition,starts_at=event.starts_at,event_id=event.id,

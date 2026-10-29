@@ -1,10 +1,10 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, field_validator
 from typing import Literal
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file='.env', extra='ignore',env_ignore_empty=True)
+    model_config = SettingsConfigDict(env_file='.env', extra='ignore',env_ignore_empty=True,allow_inf_nan=False)
     app_mode: Literal['demo', 'real'] = 'demo'
     ai_profile: Literal['sol', 'economy', 'hybrid'] = 'sol'
     app_timezone: str = 'America/Lima'
@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ''
     deepseek_model: str = 'deepseek-flash'
     openai_analysis_effort: Literal['low','medium','high','xhigh','max'] = 'medium'
+    openai_analysis_mode: Literal['standard','pro'] = 'standard'
     deepseek_reasoning_effort: Literal['low','high','max'] = 'high'
     deepseek_thinking: bool = True
     max_tool_rounds: int = Field(6, ge=1, le=10)
@@ -38,8 +39,13 @@ class Settings(BaseSettings):
     model_xi: float = Field(0.0018,ge=0,le=1)
     price_date: str = ''
     price_model: str = ''
-    input_price: float | None = None
-    output_price: float | None = None
+    input_price: float | None = Field(None,ge=0)
+    output_price: float | None = Field(None,ge=0)
+
+    @field_validator('input_price','output_price',mode='before')
+    @classmethod
+    def optional_price(cls,value):
+        return None if isinstance(value,str) and not value.strip() else value
 
     @property
     def vision_model(self):
@@ -64,8 +70,7 @@ class Settings(BaseSettings):
 
     @property
     def review_effort(self):
-        # Local preset, not an API product tier or a different model ID.
-        return 'max' if self.openai_review_mode=='pro' else self.openai_review_effort
+        return self.openai_review_effort
 
     def token_limit(self,stage):
         limits={'vision':self.vision_max_tokens,'review':self.review_max_tokens,'deepseek':self.deepseek_max_tokens}
