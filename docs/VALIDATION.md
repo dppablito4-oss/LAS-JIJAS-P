@@ -1,5 +1,7 @@
 # Reporte de implementación y validación
 
+Actualización de perfiles IA: se añadieron Sol para visión/análisis y Economy con Luna/DeepSeek. La suite ahora tiene **30 tests aprobados**. Véase [AI_PROFILES](AI_PROFILES.md); la validación original de fuentes/modelo descrita abajo se conserva.
+
 Fecha: **29 de octubre de 2026**, America/Lima. Entorno Windows, Python 3.11.9, Node 24.12.0 y npm 11.6.2. Código local, sin publicación ni despliegue externo.
 
 ## Lo que funciona y se comprobó

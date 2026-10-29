@@ -62,8 +62,9 @@ def capabilities():
     return {'mode':settings.app_mode,'timezone':settings.app_timezone,'competitions':['Premier League','LaLiga','NBA'],
         'football':'1X2 y totales con medio gol. Dixon-Coles experimental; requiere históricos con identidad verificada.',
         'nba':'Solo descriptivo. Ritmo, eficiencias y lesiones pendientes de cobertura.',
-        'vision_configured':bool(settings.openai_api_key and settings.openai_vision_model),
-        'analyst_configured':bool(settings.deepseek_api_key and settings.deepseek_model),
+        'vision_configured':bool(settings.openai_api_key and settings.vision_model),
+        'analyst_configured':settings.analyst_configured,
+        'ai':settings.ai_summary(),
         'review_enabled':False,'cost':'Desconocido sin tarifas configuradas y fechadas.',
         'providers':['demo-synthetic'] if settings.app_mode=='demo' else ['ESPN','sports-skills','nba_api']}
 

@@ -75,11 +75,11 @@ async def build_report(request,scope='analysis'):
         except Exception: analyst='Analista no disponible o timeout. Se conserva evidencia y uso de rondas completadas.'
     cost=None
     if not usage: cost=0 if settings.app_mode=='demo' else None
-    elif settings.input_price is not None and settings.output_price is not None and settings.price_date:
-        cost=sum(u.get('prompt_tokens',0)*settings.input_price+u.get('completion_tokens',0)*settings.output_price for u in usage)/1e6
+    elif settings.input_price is not None and settings.output_price is not None and settings.price_date and settings.price_model==settings.analyst_model:
+        cost=sum(u.get('prompt_tokens',u.get('input_tokens',0))*settings.input_price+u.get('completion_tokens',u.get('output_tokens',0))*settings.output_price for u in usage)/1e6
     return {'mode':settings.app_mode,'label':'Datos de demostración' if settings.app_mode=='demo' else 'Datos de proveedores externos',
         'cutoff':cutoff,'selections':results,'warnings':dependencies(request.selections),
-        'joint_probability':None,'analyst_comment':analyst,'usage':usage,'estimated_cost_usd':cost,'price_date':settings.price_date or None,
+        'joint_probability':None,'analyst_comment':analyst,'ai':settings.ai_summary(),'usage':usage,'estimated_cost_usd':cost,'price_date':settings.price_date or None,
         'final_result':None,'conclusion':'Sin ventaja demostrada' if all(c.get('event') for c in contexts) else 'Datos insuficientes'}
 
 

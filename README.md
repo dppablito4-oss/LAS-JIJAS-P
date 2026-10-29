@@ -46,15 +46,17 @@ Edita `.env` localmente y reinicia:
 
 ```dotenv
 APP_MODE=real
+AI_PROFILE=sol
 OPENAI_API_KEY=
-OPENAI_VISION_MODEL=
+OPENAI_SINGLE_MODEL=gpt-6.1-sol
+OPENAI_VISION_MODEL=gpt-6-luna
 DEEPSEEK_API_KEY=
-DEEPSEEK_MODEL=
+DEEPSEEK_MODEL=deepseek-flash
 ```
 
-No pongas claves en el frontend o en Git. No se necesitan para consultar calendarios y estadísticas públicas ni para el informe determinista. Sí son necesarias para leer una captura con IA y para el comentario de DeepSeek. La revisión OpenAI de mayor capacidad está desactivada y no se invoca.
+Hay dos perfiles. `AI_PROFILE=sol` utiliza **gpt-6.1-sol tanto para visión como para análisis**, con la misma clave OpenAI. `AI_PROFILE=economy` utiliza **gpt-6-luna para visión y deepseek-flash con razonamiento para análisis**; requiere las dos claves si usas capturas. Puedes elegir `DEEPSEEK_MODEL=deepseek-v4-pro` como alternativa. Reinicia después de cambiar `.env`. `APP_MODE=demo` sigue sin consumir APIs.
 
-Los modelos se dejan vacíos deliberadamente: elige un ID habilitado para tu cuenta y comprueba sus capacidades en [OpenAI Docs](https://developers.openai.com/api/docs/guides/images-vision) y la [documentación DeepSeek](https://api-docs.deepseek.com/guides/thinking_mode/). Un ID desconocido causa un error de proveedor; no se cambia automáticamente por otro. Las integraciones están implementadas y el ciclo de herramientas tiene pruebas simuladas; **no se hicieron llamadas de IA facturables**.
+No pongas claves en el frontend o en Git. No se necesitan para fuentes deportivas públicas ni para el informe determinista. Los IDs de modelos se verificaron en [OpenAI Docs](https://developers.openai.com/api/docs/models/gpt-6.1-sol) y el [catálogo DeepSeek](https://api-docs.deepseek.com/quick_start/pricing/). El acceso depende de tu cuenta. Sol usa Responses API para herramientas; DeepSeek conserva su protocolo de razonamiento. Un modelo desconocido causa error, sin cambiar a otro automáticamente. **30 pruebas offline aprobadas; no se hicieron llamadas de IA facturables.** Detalles: [perfiles IA](docs/AI_PROFILES.md). La revisión adicional OpenAI continúa desactivada.
 
 Consulta `/api/capabilities` para configuración pendiente. La disponibilidad real puede variar por red, temporada y proveedor. No hay sustitución de errores reales por fixtures demo.
 
@@ -119,6 +121,6 @@ Límites: 20 selecciones, 6 rondas IA, 12 llamadas de herramienta por ronda, 3 p
 
 Las imágenes se limitan por bytes, formato y dimensiones, se normalizan a JPEG sin metadatos y no se persisten. Se guardan localmente las selecciones revisadas, informes, caché y uso API. Los datos originales de temporada permanecen en caché para inspección local. TTL: calendario 5 min, NBA 1 h, fútbol 6 h. El sello de descarga original se conserva en caché; cada fila histórica mantiene su procedencia cuando está disponible. La retención local actual es indefinida hasta borrado manual; no hay limpieza programada. El borrado de un análisis no elimina caché ni registro de uso API.
 
-El uso devuelto por cada API se registra en SQLite inmediatamente, incluso si falla una ronda posterior. La estimación de coste del informe solo cubre el analista DeepSeek y requiere `INPUT_PRICE`, `OUTPUT_PRICE` (USD por millón) y `PRICE_DATE`. La extracción muestra uso/coste desconocido por separado; no se calcula factura total. No se deducen precios comerciales ni se promete un tope monetario exacto.
+El uso devuelto por cada API se registra en SQLite inmediatamente, incluso si falla una ronda posterior. La estimación de coste del informe cubre el analista seleccionado y requiere `INPUT_PRICE`, `OUTPUT_PRICE` (USD por millón), `PRICE_DATE` y `PRICE_MODEL` igual al ID del analista activo. Si cambias el modelo sin actualizar su tarifa, el coste vuelve a desconocido. La extracción informa uso/coste desconocido por separado; no se calcula factura total ni se promete un tope monetario exacto. La estimación lineal no reproduce descuentos por caché, franjas horarias, impuestos o tarifas regionales.
 
 Documentación: [dependencias](docs/DEPENDENCIES.md), [arquitectura](docs/ARCHITECTURE.md), [validación](docs/VALIDATION.md), [pendientes](docs/ROADMAP.md).
